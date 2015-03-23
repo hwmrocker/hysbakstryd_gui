@@ -7,15 +7,17 @@ Usage:
 
     gui.py
 """
+from __future__ import print_function
 import gevent
 import time
 import pygameui as ui
 # from docopt import docopt
 from gui.scenes import LoadingScene, MapScene
+from gevent import socket
 import msgpack
 import logging
 import sys
-
+import traceback
 
 class NetworkClient(object):
 
@@ -25,6 +27,14 @@ class NetworkClient(object):
         self.host = host
         self.port = int(port)
         self.socket = None
+        try:
+            self.socket = socket.create_connection((self.host, self.port))
+            self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        except socket.error as e:
+            logging.error('Connection refused: {}'.format(e))
+        except:
+            logging.error('Connection error:')
+            logging.error(traceback.format_exception())
 
     def send_msg(self, msg):
         logging.info("send: {}".format(msg))
@@ -38,22 +48,18 @@ class NetworkClient(object):
         logging.info(msg)
 
     def connect(self, username, password, **kw):
+        assert self.socket
         logging.info('Connecting...')
-        try:
-            self._socket = socket.create_connection((self.host, self.port))
-        except socket.error as e:
-            logging.error('Connection refused: {}'.format(e))
-        except:
-            logging.error('Connection error:')
-            logging.error(traceback.format_exception())
-
+        print('Connecting...')
         try:
             self.send_msg(dict(type="connect", username=username, password=password, observe=True))
-            self.sockname = "{}".format(self._socket.getsockname()[1])
+            self.sockname = "{}".format(self.socket.getsockname()[1])
             unpacker = msgpack.Unpacker(encoding='utf-8')
             pack = True  # We set this value just to jump into the while loop
             while pack:
-                pack = self._socket.recv(1024)
+                print("recv...", end="")
+                pack = self.socket.recv(1024)
+                print("... done")
                 unpacker.feed(pack)
                 for msg in unpacker:
                     self.inform(*msg)
@@ -116,6 +122,7 @@ def main_loop():
 
     while True:
         # 30 frames per second, considering computation/drawing time
+        # print(".", end="")
         gevent.sleep(last + time_per_frame - now)
         last, now = now, time.time()
         dt = now - last
@@ -172,4 +179,4 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3:
         default_args["password"] = sys.argv[2]
 
-    main({})
+    main(default_args)
